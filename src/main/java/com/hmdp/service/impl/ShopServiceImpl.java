@@ -14,8 +14,7 @@ import javax.annotation.Resource;
 
 import java.util.concurrent.TimeUnit;
 
-import static com.hmdp.utils.RedisConstants.CACHE_SHOP_KEY;
-import static com.hmdp.utils.RedisConstants.CACHE_SHOP_TTL;
+import static com.hmdp.utils.RedisConstants.*;
 
 @Service
 public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IShopService {
@@ -34,10 +33,16 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
             Shop shop = JSONUtil.toBean(shopJson, Shop.class);
             return Result.ok(shop);
         }
+//        上述的isNotBlank只是判断shopJson内是否为空
+//        缓存的空对象虽然是null但他本身并不是空，所以需要在这里再判断一步
+        if (shopJson != null){
+            return Result.fail("店铺不存在");
+        }
 //        4、redis未命中，根据id查询数据库且判断是否存在
         Shop shop = getById(id);
         if (shop == null) {
-//            5、数据库内没有该商铺信息
+//            5、数据库内没有该商铺信息，给redis缓存空对象
+            stringRedisTemplate.opsForValue().set(key, "", CACHE_NULL_TTL, TimeUnit.MINUTES);
             return Result.fail("店铺不存在");
         }
 //        6、数据库存在商铺信息，将信息写入redis
