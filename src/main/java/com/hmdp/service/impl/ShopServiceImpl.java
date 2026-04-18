@@ -13,6 +13,7 @@ import com.hmdp.utils.CacheClient;
 import com.hmdp.utils.RedisData;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 
@@ -44,7 +45,6 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
 //        逻辑过期解决缓存击穿
         Shop shop = cacheClient.queryWithLogicalExpire
                 (CACHE_SHOP_KEY, id, Shop.class, this::getById, 20L, TimeUnit.SECONDS);
-
         if (shop == null) {
             return Result.fail("店铺不存在");
         }
@@ -180,7 +180,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
 
     /*获取锁*/
     private boolean tryLock(String key) {
-        Boolean flag = stringRedisTemplate.opsForValue().setIfAbsent(key, "1", 10, TimeUnit.SECONDS);
+        Boolean flag = stringRedisTemplate.opsForValue().setIfAbsent(key, "1", LOCK_SHOP_TTL, TimeUnit.SECONDS);
 //        使用BooleanUtil防止拆箱后出现空指针
         return BooleanUtil.isTrue(flag);
     }
@@ -190,6 +190,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         stringRedisTemplate.delete(key);
     }
 
+    @Transactional
     @Override
     public Object update(Shop shop) {
 //        1、判断店铺是否存在
