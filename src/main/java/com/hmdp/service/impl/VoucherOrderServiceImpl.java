@@ -8,8 +8,10 @@ import com.hmdp.service.ISeckillVoucherService;
 import com.hmdp.service.IVoucherOrderService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.utils.RedisIdWorker;
+import com.hmdp.utils.SimpleRedisLock;
 import com.hmdp.utils.UserHolder;
 import org.springframework.aop.framework.AopContext;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +26,9 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
     @Resource
     private RedisIdWorker redisIdWorker;
+
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
 
     @Override
     public Result seckillVoucher(Long voucherId) {
@@ -45,14 +50,21 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             return Result.fail("库存不足");
         }
 //        5、调用下单的方法
-//        为什么将锁加在方法外而不是方法内：该方法使用事务注解，会在方法执行完后由 spring 进行提交
-//            如果将锁加在方法内，会出现锁释放而方法还未执行完的情况，导致又一次出现线程并发的安全性问题
-//            所以需要保证整个方案执行完后才释放锁
-        synchronized (UserHolder.getUser().getId().toString().intern()) {
+        Long userId = UserHolder.getUser().getId();
+        SimpleRedisLock lock = new SimpleRedisLock(stringRedisTemplate, "order" + userId);
+        boolean tryLock = lock.tryLock(1200);
+        if (!tryLock){
+//            获取锁失败
+            return Result.fail("不允许重复下单");
+        }
+        try {
 //            获取代理对象
             IVoucherOrderService proxy = (IVoucherOrderService) AopContext.currentProxy();
             return proxy.createVoucherOrder(voucherId);
+        } finally {
+            lock.delKey();
         }
+
     }
 
     @Transactional
