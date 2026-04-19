@@ -9,6 +9,7 @@ import com.hmdp.service.IVoucherOrderService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.utils.RedisIdWorker;
 import com.hmdp.utils.UserHolder;
+import org.springframework.aop.framework.AopContext;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,7 +26,6 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     private RedisIdWorker redisIdWorker;
 
     @Override
-    @Transactional
     public Result seckillVoucher(Long voucherId) {
 //        1、查询优惠券
         SeckillVoucher voucher = seckillVoucherService.getById(voucherId);
@@ -44,7 +44,27 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 //            库存不足
             return Result.fail("库存不足");
         }
-//        5、扣减库存
+//        5、调用下单的方法
+//        为什么将锁加在方法外而不是方法内：该方法使用事务注解，会在方法执行完后由 spring 进行提交
+//            如果将锁加在方法内，会出现锁释放而方法还未执行完的情况，导致又一次出现线程并发的安全性问题
+//            所以需要保证整个方案执行完后才释放锁
+        synchronized (UserHolder.getUser().getId().toString().intern()) {
+//            获取代理对象
+            IVoucherOrderService proxy = (IVoucherOrderService) AopContext.currentProxy();
+            return proxy.createVoucherOrder(voucherId);
+        }
+    }
+
+    @Transactional
+    public Result createVoucherOrder(Long voucherId) {
+//        1、判断用户账户下是否有了订单
+        Long userId = UserHolder.getUser().getId();
+        int count = query().eq("user_id", userId).eq("voucher_id", voucherId).count();
+        if (count > 0) {
+//            用户已下单过，不允许重复下单
+            return Result.fail("用户已下单过，不允许重复下单");
+        }
+//        2、扣减库存
         boolean success = seckillVoucherService
                 .update()
                 .setSql("stock = stock - 1")
@@ -54,19 +74,18 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         if (!success) {
             return Result.fail("库存不足");
         }
-//        6、生成订单
+//        3、生成订单
         VoucherOrder voucherOrder = new VoucherOrder();
-//        6.1、生成订单id
+//        3.1、生成订单id
         long orderId = redisIdWorker.nextId("order");
         voucherOrder.setId(orderId);
-//        6.1、获取优惠券id
+//        3.2、获取优惠券id
         voucherOrder.setVoucherId(voucherId);
-//        6.1、获取用户id
-        Long userId = UserHolder.getUser().getId();
+//        3.3、获取用户id
         voucherOrder.setUserId(userId);
 
         save(voucherOrder);
-//        7、返回订单id
+//        4、返回订单id
         return Result.ok(orderId);
     }
 }
