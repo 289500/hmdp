@@ -52,9 +52,9 @@ public class SimpleRedisLock implements ILock {
     /*释放锁*/
 //    @Override
 //    public void delKey() {
-////        获取锁的标识
+// //        获取锁的标识
 //        String id = stringRedisTemplate.opsForValue().get(KEY_PREFIX + name);
-////        获取线程的标识
+// //        获取线程的标识
 //        String threadId = ID_PREFIX + Thread.currentThread().getId();
 //        if (threadId.equals(id)) {
 //            stringRedisTemplate.delete(KEY_PREFIX + name);
